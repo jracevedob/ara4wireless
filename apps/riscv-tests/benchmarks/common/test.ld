@@ -29,10 +29,13 @@ SECTIONS
   .tohost : { *(.tohost) }
 
   . = ALIGN(0x1000);
-  .text : { *(.text) }
+  .text : { *(.text .text.*) }
+
+  /* read-only data (Clang -fdata-sections emits .rodata.*) */
+  .rodata : { *(.rodata .rodata.* .gnu.linkonce.r.*) }
 
   /* data segment */
-  .data : { *(.data) }
+  .data : { *(.data .data.*) }
 
   .sdata : {
     __global_pointer$ = . + 0x800;
@@ -45,18 +48,18 @@ SECTIONS
     *(.sbss .sbss.* .gnu.linkonce.sb.*)
     *(.scommon)
   }
-  .bss : { *(.bss) }
+  .bss : { *(.bss .bss.*) *(COMMON) }
 
   /* thread-local data segment */
   .tdata :
   {
     _tdata_begin = .;
-    *(.tdata)
+    *(.tdata .tdata.*)
     _tdata_end = .;
   }
   .tbss :
   {
-    *(.tbss)
+    *(.tbss .tbss.*)
     _tbss_end = .;
   }
 

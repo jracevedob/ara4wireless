@@ -120,7 +120,9 @@ toolchain-llvm-rt: Makefile toolchain-llvm-main toolchain-llvm-newlib
 	-DLLVM_CONFIG_PATH=$(LLVM_INSTALL_DIR)/bin/llvm-config
 	cd $(ROOT_DIR)/toolchain/riscv-llvm/compiler-rt && \
 	$(CMAKE) --build build --target install && \
-	ln -s $(LLVM_INSTALL_DIR)/lib/linux $(LLVM_INSTALL_DIR)/lib/clang/16/lib
+	CLANG_RESOURCE_DIR=$$($(LLVM_INSTALL_DIR)/bin/clang -print-resource-dir) && \
+	mkdir -p $$CLANG_RESOURCE_DIR && \
+	ln -sfn $(LLVM_INSTALL_DIR)/lib/linux $$CLANG_RESOURCE_DIR/lib
 
 # Spike
 .PHONY: riscv-isa-sim riscv-isa-sim-mod
@@ -140,7 +142,7 @@ ${ISA_SIM_MOD_INSTALL_DIR}: Makefile patches/0003-riscv-isa-sim-patch ${ISA_SIM_
 	PATH=$(ISA_SIM_MOD_INSTALL_DIR)/bin:$$PATH; cd ..; \
 	../configure --prefix=$(ISA_SIM_MOD_INSTALL_DIR) \
 	--without-boost --without-boost-asio --without-boost-regex && \
-	make -j32 && make install; \
+	make -j32 && make install && \
 	git stash
 
 ${ISA_SIM_INSTALL_DIR}: Makefile
@@ -149,7 +151,9 @@ ${ISA_SIM_INSTALL_DIR}: Makefile
 	# If there are problems with dynamic linking, use:
 	# make riscv-isa-sim LDFLAGS="-static-libstdc++"
 	# Spike was compiled successfully using gcc and g++ version 7.2.0.
-	cd toolchain/riscv-isa-sim && rm -rf build && mkdir -p build && cd build; \
+	cd toolchain/riscv-isa-sim && \
+	grep -q '#include <cstdint>' fesvr/device.h || sed -i '/#include <functional>/a #include <cstdint>' fesvr/device.h && \
+	rm -rf build && mkdir -p build && cd build; \
 	[ -d dtc ] || git clone https://git.kernel.org/pub/scm/utils/dtc/dtc.git && cd dtc && git checkout $(DTC_COMMIT); \
 	make install SETUP_PREFIX=$(ISA_SIM_INSTALL_DIR) PREFIX=$(ISA_SIM_INSTALL_DIR) && \
 	PATH=$(ISA_SIM_INSTALL_DIR)/bin:$$PATH; cd ..; \
@@ -167,7 +171,9 @@ ${VERIL_INSTALL_DIR}: Makefile
 	# Compile verilator
 	cd $(CURDIR)/toolchain/verilator && git clean -xfdf && autoconf && \
 	CC=$(CLANG_CC) CXX=$(CLANG_CXX) CXXFLAGS=$(CLANG_CXXFLAGS) LDFLAGS=$(CLANG_LDFLAGS) \
-		./configure --prefix=$(VERIL_INSTALL_DIR) && make -j8 && make install
+		./configure --prefix=$(VERIL_INSTALL_DIR) && make -j8 && make install && \
+	ln -sfn ../../bin/verilator_bin $(VERIL_INSTALL_DIR)/share/verilator/verilator_bin && \
+	ln -sfn ../../bin/verilator_bin_dbg $(VERIL_INSTALL_DIR)/share/verilator/verilator_bin_dbg
 
 # RISC-V Tests
 riscv_tests:
