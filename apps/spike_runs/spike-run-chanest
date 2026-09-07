@@ -1,0 +1,15 @@
+
+==============
+=  CHANEST   =
+==============
+
+5G NR DMRS channel estimation, 256 subcarriers.
+sigma_h2 (x1000) = 1000, sigma_n2 (x1000) = 100
+
+LSE kernel took 0 cycles.
+LSE passed.
+
+MMSE kernel took 0 cycles.
+MMSE passed.
+
+Passed.
