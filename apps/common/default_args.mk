@@ -35,3 +35,6 @@ def_args_spmv        ?= "128 128 0.6"
 def_args_conjugate_gradient	?= "128 0 0.5"
 # 5G channel estimation: number of DMRS REs, SNR in dB
 def_args_chanest     ?= "256 10"
+# Precoding linear and non-linear
+def_args_precoding/linear ?= "64 4 2"
+def_args_precoding/dpc    ?= "64 4 2"

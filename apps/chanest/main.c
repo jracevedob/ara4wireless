@@ -1,4 +1,4 @@
-// Copyright 2026 TUD Technical UNiversity of Dresden
+// Copyright 2026 TUD Technical University of Dresden
 //
 // SPDX-License-Identifier: Apache-2.0
 //
@@ -16,7 +16,7 @@
 
 // Author: Javier Acevedo, TU Dresden Telekom Chair of Communication Networks
 
-// Example: 5G NR DMRS channel estimation benchmark: LSE and MMSE.
+// 5G NR DMRS channel estimation benchmark: LSE and MMSE.
 
 #include <stdint.h>
 #include <string.h>
