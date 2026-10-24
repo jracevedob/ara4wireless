@@ -38,3 +38,5 @@ def_args_chanest     ?= "256 10"
 # Precoding linear and non-linear
 def_args_precoding/linear ?= "64 4 2"
 def_args_precoding/dpc    ?= "64 4 2"
+# Uplink detection: M receive antennas, K users, N antennas/user
+def_args_detection ?= "64 4 2"

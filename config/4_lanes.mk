@@ -22,4 +22,4 @@ nr_lanes ?= 16
 
 # Length of each vector register (in bits)
 # Constraints: VLEN > 128
-vlen ?= 8192
+vlen ?= 16384
