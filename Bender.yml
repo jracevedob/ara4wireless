@@ -25,10 +25,14 @@ sources:
     # Packages
     - hardware/include/rvv_pkg.sv
     - hardware/include/ara_pkg.sv
+    - hardware/src/precoding/precoding_pkg.sv
 
     # Sources
     # Level 1
     - hardware/src/axi_to_mem.sv
+    - hardware/src/precoding/prec_axi_join.sv
+    - hardware/src/precoding/precoding_regs.sv
+    - hardware/src/precoding/precoding_unit.sv
     - hardware/src/ctrl_registers.sv
     - hardware/src/cva6_accel_first_pass_decoder.sv
     - hardware/src/ara_dispatcher.sv

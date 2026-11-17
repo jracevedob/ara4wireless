@@ -179,6 +179,60 @@ void apply_precoder(size_t K, size_t M, const double *w_re, const double *w_im,
   }
 }
 
+void apply_precoder_vec(size_t K, size_t M, const double *w_re, const double *w_im,
+                        const double *s_re, const double *s_im, double *x_re, double *x_im) {
+#if !defined(__riscv)
+  apply_precoder(K, M, w_re, w_im, s_re, s_im, x_re, x_im);
+#else
+  double zero = 0.0;
+  size_t vl = 0;
+  double *xr0 = x_re;
+  double *xi0 = x_im;
+  for (size_t avl = M; avl > 0; avl -= vl) {
+    asm volatile("vsetvli %0, %1, e64, m4, ta, ma" : "=r"(vl) : "r"(avl));
+    asm volatile("vfmv.v.f v0, %0" ::"f"(zero));
+    asm volatile("vse64.v v0, (%0)" ::"r"(xr0));
+    asm volatile("vse64.v v0, (%0)" ::"r"(xi0));
+    xr0 += vl;
+    xi0 += vl;
+  }
+  for (size_t k = 0; k < K; ++k) {
+    double sr = s_re[k];
+    double si = s_im[k];
+    const double *wr = w_re + k * M;
+    const double *wi = w_im + k * M;
+    double *xr = x_re;
+    double *xi = x_im;
+    for (size_t avl = M; avl > 0; avl -= vl) {
+      asm volatile("vsetvli %0, %1, e64, m4, ta, ma" : "=r"(vl) : "r"(avl));
+      asm volatile("vle64.v v0, (%0)" ::"r"(wr));
+      asm volatile("vle64.v v4, (%0)" ::"r"(wi));
+      asm volatile("vle64.v v8, (%0)" ::"r"(xr));
+      asm volatile("vle64.v v12, (%0)" ::"r"(xi));
+      // x += w * s, real and imaginary parts.
+      asm volatile("vfmacc.vf v8, %0, v0" ::"f"(sr));
+      asm volatile("vfnmsac.vf v8, %0, v4" ::"f"(si));
+      asm volatile("vfmacc.vf v12, %0, v0" ::"f"(si));
+      asm volatile("vfmacc.vf v12, %0, v4" ::"f"(sr));
+      asm volatile("vse64.v v8, (%0)" ::"r"(xr));
+      asm volatile("vse64.v v12, (%0)" ::"r"(xi));
+      wr += vl;
+      wi += vl;
+      xr += vl;
+      xi += vl;
+    }
+  }
+#endif
+}
+
+static void apply_symbols(size_t K, size_t M, int use_vec, const double *w_re, const double *w_im,
+                          const double *s_re, const double *s_im, double *x_re, double *x_im) {
+  if (use_vec)
+    apply_precoder_vec(K, M, w_re, w_im, s_re, s_im, x_re, x_im);
+  else
+    apply_precoder(K, M, w_re, w_im, s_re, s_im, x_re, x_im);
+}
+
 // G_ij = h_jᴴ h_i. Row j stays in v0/v1 while up to four rows i are accumulated
 // with LMUL=1, and the reduction runs once per antenna chunk.
 static void gram_vec(size_t K, size_t M, const double *h_re, const double *h_im, double *a_re,
@@ -405,7 +459,7 @@ void rzf_precoder(size_t K, size_t M, double P, double alpha, int use_vec,
     w_re[n] *= scale;
     w_im[n] *= scale;
   }
-  apply_precoder(K, M, w_re, w_im, s_re, s_im, x_re, x_im);
+  apply_symbols(K, M, use_vec, w_re, w_im, s_re, s_im, x_re, x_im);
 }
 
 // Lower Cholesky factor of a Hermitian positive-definite matrix, A = L Lᴴ.
@@ -548,7 +602,7 @@ void rzf_lowlat(size_t K, size_t M, double P, double alpha, int use_vec,
     w_re[n] *= scale;
     w_im[n] *= scale;
   }
-  apply_precoder(K, M, w_re, w_im, s_re, s_im, x_re, x_im);
+  apply_symbols(K, M, use_vec, w_re, w_im, s_re, s_im, x_re, x_im);
 }
 
 static size_t tile_step(size_t n, size_t tile) { return (tile == 0 || tile > n) ? n : tile; }
@@ -678,7 +732,7 @@ static void scale_and_apply(size_t K, size_t M, double P, double fro, const doub
     w_re[n] *= scale;
     w_im[n] *= scale;
   }
-  apply_precoder(K, M, w_re, w_im, s_re, s_im, x_re, x_im);
+  apply_precoder_vec(K, M, w_re, w_im, s_re, s_im, x_re, x_im);
 }
 
 void rzf_tiled(size_t K, size_t M, double P, double alpha, size_t tile, const double *h_re,

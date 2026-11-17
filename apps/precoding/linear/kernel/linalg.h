@@ -44,6 +44,12 @@ void apply_precoder(size_t K, size_t M, const double *w_re, const double *w_im,
                     const double *s_re, const double *s_im, double *x_re,
                     double *x_im);
 
+// Same product as apply_precoder. Each stream is one strip along the M
+// antennas, so the symbol application stays on Ara.
+void apply_precoder_vec(size_t K, size_t M, const double *w_re, const double *w_im,
+                        const double *s_re, const double *s_im, double *x_re,
+                        double *x_im);
+
 // Same filters as rzf_precoder and rzf_lowlat. The Gram and the product
 // Hᴴ A⁻¹ are formed in tile×tile blocks. Inner products run on Ara over
 // antenna panels of width tile. The low-latency form solves the Cholesky

@@ -6,7 +6,7 @@
 // Description:
 // Ara's SoC, containing CVA6, Ara, and a L2 cache.
 
-module ara_soc import axi_pkg::*; import ara_pkg::*; #(
+module ara_soc import axi_pkg::*; import ara_pkg::*; import precoding_pkg::*; #(
     // RVV Parameters
     parameter  int           unsigned NrLanes      = 0,                          // Number of parallel vector lanes.
     // Support for floating-point data types
@@ -64,20 +64,23 @@ module ara_soc import axi_pkg::*; import ara_pkg::*; #(
   typedef enum int unsigned {
     L2MEM = 0,
     UART  = 1,
-    CTRL  = 2
+    CTRL  = 2,
+    PREC  = 3
   } axi_slaves_e;
-  localparam NrAXISlaves = CTRL + 1;
+  localparam NrAXISlaves = PREC + 1;
 
   // Memory Map
   // 1GByte of DDR (split between two chips on Genesys2)
   localparam logic [63:0] DRAMLength = 64'h40000000;
   localparam logic [63:0] UARTLength = 64'h1000;
   localparam logic [63:0] CTRLLength = 64'h1000;
+  localparam logic [63:0] PRECLength = PREC_LENGTH;
 
   typedef enum logic [63:0] {
     DRAMBase = 64'h8000_0000,
     UARTBase = 64'hC000_0000,
-    CTRLBase = 64'hD000_0000
+    CTRLBase = 64'hD000_0000,
+    PRECBase = PREC_BASE
   } soc_bus_start_e;
 
   ///////////
@@ -144,6 +147,7 @@ module ara_soc import axi_pkg::*; import ara_pkg::*; #(
 
   axi_pkg::xbar_rule_64_t [NrAXISlaves-1:0] routing_rules;
   assign routing_rules = '{
+    '{idx: PREC, start_addr: PRECBase, end_addr: PRECBase + PRECLength},
     '{idx: CTRL, start_addr: CTRLBase, end_addr: CTRLBase + CTRLLength},
     '{idx: UART, start_addr: UARTBase, end_addr: UARTBase + UARTLength},
     '{idx: L2MEM, start_addr: DRAMBase, end_addr: DRAMBase + DRAMLength}
@@ -407,6 +411,81 @@ module ara_soc import axi_pkg::*; import ara_pkg::*; #(
     .event_trigger_o      (event_trigger)
   );
 
+  ////////////////////////////////
+  //  Precoding coprocessor regs  //
+  ////////////////////////////////
+
+  soc_narrow_lite_req_t  axi_lite_prec_req;
+  soc_narrow_lite_resp_t axi_lite_prec_resp;
+  prec_cfg_t             prec_cfg;
+  logic                  prec_start, prec_busy, prec_done, prec_err;
+  logic [63:0]           prec_cycles;
+
+  axi_to_axi_lite #(
+    .AxiAddrWidth   (AxiAddrWidth          ),
+    .AxiDataWidth   (AxiNarrowDataWidth    ),
+    .AxiIdWidth     (AxiSocIdWidth         ),
+    .AxiUserWidth   (AxiUserWidth          ),
+    .AxiMaxReadTxns (1                     ),
+    .AxiMaxWriteTxns(1                     ),
+    .FallThrough    (1'b0                  ),
+    .full_req_t     (soc_narrow_req_t      ),
+    .full_resp_t    (soc_narrow_resp_t     ),
+    .lite_req_t     (soc_narrow_lite_req_t ),
+    .lite_resp_t    (soc_narrow_lite_resp_t)
+  ) i_axi_to_axi_lite_prec (
+    .clk_i     (clk_i                      ),
+    .rst_ni    (rst_ni                     ),
+    .test_i    (1'b0                       ),
+    .slv_req_i (periph_narrow_axi_req[PREC]),
+    .slv_resp_o(periph_narrow_axi_resp[PREC]),
+    .mst_req_o (axi_lite_prec_req          ),
+    .mst_resp_i(axi_lite_prec_resp         )
+  );
+
+  precoding_regs #(
+    .DataWidth  (AxiNarrowDataWidth    ),
+    .lite_req_t (soc_narrow_lite_req_t ),
+    .lite_resp_t(soc_narrow_lite_resp_t)
+  ) i_precoding_regs (
+    .clk_i    (clk_i             ),
+    .rst_ni   (rst_ni            ),
+    .req_i    (axi_lite_prec_req ),
+    .resp_o   (axi_lite_prec_resp),
+    .cfg_o    (prec_cfg          ),
+    .start_o  (prec_start        ),
+    .busy_i   (prec_busy         ),
+    .done_i   (prec_done         ),
+    .err_i    (prec_err          ),
+    .cycles_i (prec_cycles       )
+  );
+
+  axi_dw_converter #(
+    .AxiSlvPortDataWidth(AxiWideDataWidth    ),
+    .AxiMstPortDataWidth(AxiNarrowDataWidth  ),
+    .AxiAddrWidth       (AxiAddrWidth        ),
+    .AxiIdWidth         (AxiSocIdWidth       ),
+    .AxiMaxReads        (1                   ),
+    .ar_chan_t          (soc_wide_ar_chan_t  ),
+    .mst_r_chan_t       (soc_narrow_r_chan_t ),
+    .slv_r_chan_t       (soc_wide_r_chan_t   ),
+    .aw_chan_t          (soc_narrow_aw_chan_t),
+    .b_chan_t           (soc_narrow_b_chan_t ),
+    .mst_w_chan_t       (soc_narrow_w_chan_t ),
+    .slv_w_chan_t       (soc_wide_w_chan_t   ),
+    .axi_mst_req_t      (soc_narrow_req_t    ),
+    .axi_mst_resp_t     (soc_narrow_resp_t   ),
+    .axi_slv_req_t      (soc_wide_req_t      ),
+    .axi_slv_resp_t     (soc_wide_resp_t     )
+  ) i_axi_slave_prec_dwc (
+    .clk_i     (clk_i                       ),
+    .rst_ni    (rst_ni                      ),
+    .slv_req_i (periph_wide_axi_req[PREC]   ),
+    .slv_resp_o(periph_wide_axi_resp[PREC]  ),
+    .mst_req_o (periph_narrow_axi_req[PREC] ),
+    .mst_resp_i(periph_narrow_axi_resp[PREC])
+  );
+
   axi_dw_converter #(
     .AxiSlvPortDataWidth(AxiWideDataWidth    ),
     .AxiMstPortDataWidth(AxiNarrowDataWidth  ),
@@ -551,6 +630,12 @@ module ara_soc import axi_pkg::*; import ara_pkg::*; #(
     .scan_enable_i(1'b0                     ),
     .scan_data_i  (1'b0                     ),
     .scan_data_o  (/* Unconnected */        ),
+    .prec_cfg_i   (prec_cfg                 ),
+    .prec_start_i (prec_start               ),
+    .prec_busy_o  (prec_busy                ),
+    .prec_done_o  (prec_done                ),
+    .prec_err_o   (prec_err                 ),
+    .prec_cycles_o(prec_cycles              ),
 `ifndef TARGET_GATESIM
     .axi_req_o    (system_axi_req           ),
     .axi_resp_i   (system_axi_resp          )

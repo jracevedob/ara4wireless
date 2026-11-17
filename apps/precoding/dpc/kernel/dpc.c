@@ -85,6 +85,112 @@ static void hdot_vec(const double *ar, const double *ai, const double *br,
 #endif
 }
 
+// Antenna-axis strips. The QR coefficients and the Tomlinson-Harashima
+// recurrence stay scalar; every length-M update is one Ara instruction stream.
+static void saxpy_panel(double *vr, double *vi, const double *qr, const double *qi, double rr,
+                        double ri, size_t n);
+static void caxpy_conj_panel(const double *hr, const double *hi, double ar, double ai,
+                             double *wr, double *wi, size_t n);
+
+static void vzero(double *vr, double *vi, size_t n) {
+#if !defined(__riscv)
+  for (size_t m = 0; m < n; ++m) {
+    vr[m] = 0.0;
+    vi[m] = 0.0;
+  }
+#else
+  double zero = 0.0;
+  size_t vl = 0;
+  for (size_t avl = n; avl > 0; avl -= vl) {
+    asm volatile("vsetvli %0, %1, e64, m4, ta, ma" : "=r"(vl) : "r"(avl));
+    asm volatile("vfmv.v.f v0, %0" ::"f"(zero));
+    asm volatile("vse64.v v0, (%0)" ::"r"(vr));
+    asm volatile("vse64.v v0, (%0)" ::"r"(vi));
+    vr += vl;
+    vi += vl;
+  }
+#endif
+}
+
+static void vconj(double *vr, double *vi, const double *hr, const double *hi, size_t n) {
+#if !defined(__riscv)
+  for (size_t m = 0; m < n; ++m) {
+    vr[m] = hr[m];
+    vi[m] = -hi[m];
+  }
+#else
+  double neg = -1.0;
+  size_t vl = 0;
+  for (size_t avl = n; avl > 0; avl -= vl) {
+    asm volatile("vsetvli %0, %1, e64, m4, ta, ma" : "=r"(vl) : "r"(avl));
+    asm volatile("vle64.v v0, (%0)" ::"r"(hr));
+    asm volatile("vle64.v v4, (%0)" ::"r"(hi));
+    asm volatile("vfmul.vf v4, v4, %0" ::"f"(neg));
+    asm volatile("vse64.v v0, (%0)" ::"r"(vr));
+    asm volatile("vse64.v v4, (%0)" ::"r"(vi));
+    hr += vl;
+    hi += vl;
+    vr += vl;
+    vi += vl;
+  }
+#endif
+}
+
+static void vscale(double *vr, double *vi, const double *ar, const double *ai, double gain,
+                   size_t n) {
+#if !defined(__riscv)
+  for (size_t m = 0; m < n; ++m) {
+    vr[m] = gain * ar[m];
+    vi[m] = gain * ai[m];
+  }
+#else
+  size_t vl = 0;
+  for (size_t avl = n; avl > 0; avl -= vl) {
+    asm volatile("vsetvli %0, %1, e64, m4, ta, ma" : "=r"(vl) : "r"(avl));
+    asm volatile("vle64.v v0, (%0)" ::"r"(ar));
+    asm volatile("vle64.v v4, (%0)" ::"r"(ai));
+    asm volatile("vfmul.vf v0, v0, %0" ::"f"(gain));
+    asm volatile("vfmul.vf v4, v4, %0" ::"f"(gain));
+    asm volatile("vse64.v v0, (%0)" ::"r"(vr));
+    asm volatile("vse64.v v4, (%0)" ::"r"(vi));
+    ar += vl;
+    ai += vl;
+    vr += vl;
+    vi += vl;
+  }
+#endif
+}
+
+// x += q * u over one antenna strip.
+static void vcaxpy(double *xr, double *xi, const double *qr, const double *qi, double ur,
+                   double ui, size_t n) {
+#if !defined(__riscv)
+  for (size_t m = 0; m < n; ++m) {
+    xr[m] += qr[m] * ur - qi[m] * ui;
+    xi[m] += qr[m] * ui + qi[m] * ur;
+  }
+#else
+  size_t vl = 0;
+  for (size_t avl = n; avl > 0; avl -= vl) {
+    asm volatile("vsetvli %0, %1, e64, m4, ta, ma" : "=r"(vl) : "r"(avl));
+    asm volatile("vle64.v v0, (%0)" ::"r"(qr));
+    asm volatile("vle64.v v4, (%0)" ::"r"(qi));
+    asm volatile("vle64.v v8, (%0)" ::"r"(xr));
+    asm volatile("vle64.v v12, (%0)" ::"r"(xi));
+    asm volatile("vfmacc.vf v8, %0, v0" ::"f"(ur));
+    asm volatile("vfnmsac.vf v8, %0, v4" ::"f"(ui));
+    asm volatile("vfmacc.vf v12, %0, v0" ::"f"(ui));
+    asm volatile("vfmacc.vf v12, %0, v4" ::"f"(ur));
+    asm volatile("vse64.v v8, (%0)" ::"r"(xr));
+    asm volatile("vse64.v v12, (%0)" ::"r"(xi));
+    qr += vl;
+    qi += vl;
+    xr += vl;
+    xi += vl;
+  }
+#endif
+}
+
 static void dpc_run(size_t K, size_t M, double P, int use_vec, const double *h_re,
                     const double *h_im, const double *s_re, const double *s_im,
                     double *q_re, double *q_im, double *rdiag, double *u_re,
@@ -101,9 +207,13 @@ static void dpc_run(size_t K, size_t M, double P, int use_vec, const double *h_r
 
   // Columns of Hᴴ. Column k is conj(h_k).
   for (size_t k = 0; k < K; ++k) {
-    for (size_t m = 0; m < M; ++m) {
-      v_re[k * M + m] = h_re[k * M + m];
-      v_im[k * M + m] = -h_im[k * M + m];
+    if (use_vec) {
+      vconj(&v_re[k * M], &v_im[k * M], &h_re[k * M], &h_im[k * M], M);
+    } else {
+      for (size_t m = 0; m < M; ++m) {
+        v_re[k * M + m] = h_re[k * M + m];
+        v_im[k * M + m] = -h_im[k * M + m];
+      }
     }
   }
 
@@ -117,11 +227,15 @@ static void dpc_run(size_t K, size_t M, double P, int use_vec, const double *h_r
         hdot_gold(&q_re[j * M], &q_im[j * M], &v_re[k * M], &v_im[k * M], M, &rr, &ri);
       r_re[j * K + k] = rr;
       r_im[j * K + k] = ri;
-      for (size_t m = 0; m < M; ++m) {
-        double qr = q_re[j * M + m];
-        double qi = q_im[j * M + m];
-        v_re[k * M + m] -= qr * rr - qi * ri;
-        v_im[k * M + m] -= qr * ri + qi * rr;
+      if (use_vec) {
+        saxpy_panel(&v_re[k * M], &v_im[k * M], &q_re[j * M], &q_im[j * M], rr, ri, M);
+      } else {
+        for (size_t m = 0; m < M; ++m) {
+          double qr = q_re[j * M + m];
+          double qi = q_im[j * M + m];
+          v_re[k * M + m] -= qr * rr - qi * ri;
+          v_im[k * M + m] -= qr * ri + qi * rr;
+        }
       }
     }
     double nr;
@@ -135,9 +249,13 @@ static void dpc_run(size_t K, size_t M, double P, int use_vec, const double *h_r
     r_re[k * K + k] = rkk;
     r_im[k * K + k] = 0.0;
     double inv = 1.0 / rkk;
-    for (size_t m = 0; m < M; ++m) {
-      q_re[k * M + m] = v_re[k * M + m] * inv;
-      q_im[k * M + m] = v_im[k * M + m] * inv;
+    if (use_vec) {
+      vscale(&q_re[k * M], &q_im[k * M], &v_re[k * M], &v_im[k * M], inv, M);
+    } else {
+      for (size_t m = 0; m < M; ++m) {
+        q_re[k * M + m] = v_re[k * M + m] * inv;
+        q_im[k * M + m] = v_im[k * M + m] * inv;
+      }
     }
   }
 
@@ -158,23 +276,32 @@ static void dpc_run(size_t K, size_t M, double P, int use_vec, const double *h_r
   }
 
   double power = 0.0;
-  for (size_t m = 0; m < M; ++m) {
-    double xr = 0.0;
-    double xi = 0.0;
-    for (size_t k = 0; k < K; ++k) {
-      double qr = q_re[k * M + m];
-      double qi = q_im[k * M + m];
-      xr += qr * u_re[k] - qi * u_im[k];
-      xi += qr * u_im[k] + qi * u_re[k];
+  if (use_vec) {
+    double pi;
+    vzero(x_re, x_im, M);
+    for (size_t k = 0; k < K; ++k)
+      vcaxpy(x_re, x_im, &q_re[k * M], &q_im[k * M], u_re[k], u_im[k], M);
+    hdot_vec(x_re, x_im, x_re, x_im, M, &power, &pi);
+    vscale(x_re, x_im, x_re, x_im, sqrt(P / power), M);
+  } else {
+    for (size_t m = 0; m < M; ++m) {
+      double xr = 0.0;
+      double xi = 0.0;
+      for (size_t k = 0; k < K; ++k) {
+        double qr = q_re[k * M + m];
+        double qi = q_im[k * M + m];
+        xr += qr * u_re[k] - qi * u_im[k];
+        xi += qr * u_im[k] + qi * u_re[k];
+      }
+      x_re[m] = xr;
+      x_im[m] = xi;
+      power += xr * xr + xi * xi;
     }
-    x_re[m] = xr;
-    x_im[m] = xi;
-    power += xr * xr + xi * xi;
-  }
-  double scale = sqrt(P / power);
-  for (size_t m = 0; m < M; ++m) {
-    x_re[m] *= scale;
-    x_im[m] *= scale;
+    double scale = sqrt(P / power);
+    for (size_t m = 0; m < M; ++m) {
+      x_re[m] *= scale;
+      x_im[m] *= scale;
+    }
   }
 }
 
@@ -284,23 +411,32 @@ static void dpc_ll_run(size_t K, size_t M, double P, int use_vec, const double *
   chol_back(K, l_re, l_im, u_re, u_im, z_re, z_im);
 
   double power = 0.0;
-  for (size_t m = 0; m < M; ++m) {
-    double xr = 0.0;
-    double xi = 0.0;
-    for (size_t k = 0; k < K; ++k) {
-      double hr = h_re[k * M + m];
-      double hi = h_im[k * M + m];
-      xr += hr * z_re[k] + hi * z_im[k];
-      xi += hr * z_im[k] - hi * z_re[k];
+  if (use_vec) {
+    double pi;
+    vzero(x_re, x_im, M);
+    for (size_t k = 0; k < K; ++k)
+      caxpy_conj_panel(&h_re[k * M], &h_im[k * M], z_re[k], z_im[k], x_re, x_im, M);
+    hdot_vec(x_re, x_im, x_re, x_im, M, &power, &pi);
+    vscale(x_re, x_im, x_re, x_im, sqrt(P / power), M);
+  } else {
+    for (size_t m = 0; m < M; ++m) {
+      double xr = 0.0;
+      double xi = 0.0;
+      for (size_t k = 0; k < K; ++k) {
+        double hr = h_re[k * M + m];
+        double hi = h_im[k * M + m];
+        xr += hr * z_re[k] + hi * z_im[k];
+        xi += hr * z_im[k] - hi * z_re[k];
+      }
+      x_re[m] = xr;
+      x_im[m] = xi;
+      power += xr * xr + xi * xi;
     }
-    x_re[m] = xr;
-    x_im[m] = xi;
-    power += xr * xr + xi * xi;
-  }
-  double scale = sqrt(P / power);
-  for (size_t m = 0; m < M; ++m) {
-    x_re[m] *= scale;
-    x_im[m] *= scale;
+    double scale = sqrt(P / power);
+    for (size_t m = 0; m < M; ++m) {
+      x_re[m] *= scale;
+      x_im[m] *= scale;
+    }
   }
 }
 
@@ -391,19 +527,14 @@ static void dpc_tiled_run(size_t K, size_t M, double P, size_t tile, const doubl
   double v_im[K * M];
   double r_re[K * K];
   double r_im[K * K];
-  size_t step_m = tile_step(M, tile);
   size_t step_k = tile_step(K, tile);
 
   for (size_t n = 0; n < K * K; ++n) {
     r_re[n] = 0.0;
     r_im[n] = 0.0;
   }
-  for (size_t k = 0; k < K; ++k) {
-    for (size_t m = 0; m < M; ++m) {
-      v_re[k * M + m] = h_re[k * M + m];
-      v_im[k * M + m] = -h_im[k * M + m];
-    }
-  }
+  for (size_t k = 0; k < K; ++k)
+    vconj(&v_re[k * M], &v_im[k * M], &h_re[k * M], &h_im[k * M], M);
 
   for (size_t k0 = 0; k0 < K; k0 += step_k) {
     size_t nk = K - k0 < step_k ? K - k0 : step_k;
@@ -412,11 +543,8 @@ static void dpc_tiled_run(size_t K, size_t M, double P, size_t tile, const doubl
       for (size_t j = 0; j < k; ++j) {
         hdot_panels(&q_re[j * M], &q_im[j * M], &v_re[k * M], &v_im[k * M], M, tile,
                     &r_re[j * K + k], &r_im[j * K + k]);
-        for (size_t m0 = 0; m0 < M; m0 += step_m) {
-          size_t tm = M - m0 < step_m ? M - m0 : step_m;
-          saxpy_panel(&v_re[k * M + m0], &v_im[k * M + m0], &q_re[j * M + m0],
-                      &q_im[j * M + m0], r_re[j * K + k], r_im[j * K + k], tm);
-        }
+        saxpy_panel(&v_re[k * M], &v_im[k * M], &q_re[j * M], &q_im[j * M], r_re[j * K + k],
+                    r_im[j * K + k], M);
       }
       double nr;
       double ni;
@@ -426,13 +554,7 @@ static void dpc_tiled_run(size_t K, size_t M, double P, size_t tile, const doubl
       r_re[k * K + k] = rkk;
       r_im[k * K + k] = 0.0;
       double inv = 1.0 / rkk;
-      for (size_t m0 = 0; m0 < M; m0 += step_m) {
-        size_t tm = M - m0 < step_m ? M - m0 : step_m;
-        for (size_t m = 0; m < tm; ++m) {
-          q_re[k * M + m0 + m] = v_re[k * M + m0 + m] * inv;
-          q_im[k * M + m0 + m] = v_im[k * M + m0 + m] * inv;
-        }
-      }
+      vscale(&q_re[k * M], &q_im[k * M], &v_re[k * M], &v_im[k * M], inv, M);
     }
   }
 
@@ -453,32 +575,13 @@ static void dpc_tiled_run(size_t K, size_t M, double P, size_t tile, const doubl
     }
   }
 
-  double power = 0.0;
-  for (size_t m0 = 0; m0 < M; m0 += step_m) {
-    size_t tm = M - m0 < step_m ? M - m0 : step_m;
-    for (size_t m = 0; m < tm; ++m) {
-      double xr = 0.0;
-      double xi = 0.0;
-      for (size_t k0 = 0; k0 < K; k0 += step_k) {
-        size_t nk = K - k0 < step_k ? K - k0 : step_k;
-        for (size_t kk = 0; kk < nk; ++kk) {
-          size_t k = k0 + kk;
-          double qr = q_re[k * M + m0 + m];
-          double qi = q_im[k * M + m0 + m];
-          xr += qr * u_re[k] - qi * u_im[k];
-          xi += qr * u_im[k] + qi * u_re[k];
-        }
-      }
-      x_re[m0 + m] = xr;
-      x_im[m0 + m] = xi;
-      power += xr * xr + xi * xi;
-    }
-  }
-  double scale = sqrt(P / power);
-  for (size_t m = 0; m < M; ++m) {
-    x_re[m] *= scale;
-    x_im[m] *= scale;
-  }
+  double power;
+  double pi;
+  vzero(x_re, x_im, M);
+  for (size_t k = 0; k < K; ++k)
+    vcaxpy(x_re, x_im, &q_re[k * M], &q_im[k * M], u_re[k], u_im[k], M);
+  hdot_vec(x_re, x_im, x_re, x_im, M, &power, &pi);
+  vscale(x_re, x_im, x_re, x_im, sqrt(P / power), M);
 }
 
 static void dpc_ll_tiled_run(size_t K, size_t M, double P, size_t tile, const double *h_re,
@@ -561,11 +664,7 @@ static void dpc_ll_tiled_run(size_t K, size_t M, double P, size_t tile, const do
     for (size_t m = 0; m < tm; ++m)
       power += x_re[m0 + m] * x_re[m0 + m] + x_im[m0 + m] * x_im[m0 + m];
   }
-  double scale = sqrt(P / power);
-  for (size_t m = 0; m < M; ++m) {
-    x_re[m] *= scale;
-    x_im[m] *= scale;
-  }
+  vscale(x_re, x_im, x_re, x_im, sqrt(P / power), M);
 }
 
 void dpc_vec_tile(size_t K, size_t N, size_t M, double P, size_t tile, const double *h_re,

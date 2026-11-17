@@ -6,7 +6,7 @@
 // Description:
 // Ara's System, containing Ariane and Ara.
 
-module ara_system import axi_pkg::*; import ara_pkg::*; #(
+module ara_system import axi_pkg::*; import ara_pkg::*; import precoding_pkg::*; #(
     // RVV Parameters
     parameter int                      unsigned NrLanes            = 0,                               // Number of parallel vector lanes.
     // Support for floating-point data types
@@ -54,7 +54,15 @@ module ara_system import axi_pkg::*; import ara_pkg::*; #(
     output logic                    scan_data_o,
     // AXI Interface
     output system_axi_req_t         axi_req_o,
-    input  system_axi_resp_t        axi_resp_i
+    input  system_axi_resp_t        axi_resp_i,
+    // Precoding coprocessor. The datapath reads and writes L2 through Ara's
+    // AXI port. The register file lives in the SoC crossbar.
+    input  prec_cfg_t               prec_cfg_i,
+    input  logic                    prec_start_i,
+    output logic                    prec_busy_o,
+    output logic                    prec_done_o,
+    output logic                    prec_err_o,
+    output logic [63:0]             prec_cycles_o
   );
 
   `include "axi/assign.svh"
@@ -68,6 +76,8 @@ module ara_system import axi_pkg::*; import ara_pkg::*; #(
   ariane_axi_resp_t ariane_narrow_axi_resp;
   ara_axi_req_t     ariane_axi_req, ara_axi_req_inval, ara_axi_req;
   ara_axi_resp_t    ariane_axi_resp, ara_axi_resp_inval, ara_axi_resp;
+  ara_axi_req_t     ara_core_req, prec_dma_req;
+  ara_axi_resp_t    ara_core_resp, prec_dma_resp;
 
   //////////////////////
   //  Ara and Ariane  //
@@ -228,8 +238,41 @@ module ara_system import axi_pkg::*; import ara_pkg::*; #(
     .scan_data_o     (/* Unused */  ),
     .acc_req_i       (acc_req       ),
     .acc_resp_o      (acc_resp      ),
-    .axi_req_o       (ara_axi_req   ),
-    .axi_resp_i      (ara_axi_resp  )
+    .axi_req_o       (ara_core_req  ),
+    .axi_resp_i      (ara_core_resp )
+  );
+
+  precoding_unit #(
+    .AxiDataWidth(AxiWideDataWidth),
+    .req_t       (ara_axi_req_t   ),
+    .resp_t      (ara_axi_resp_t  )
+  ) i_precoding (
+    .clk_i     (clk_i         ),
+    .rst_ni    (rst_ni        ),
+    .cfg_i     (prec_cfg_i    ),
+    .start_i   (prec_start_i  ),
+    .busy_o    (prec_busy_o   ),
+    .done_o    (prec_done_o   ),
+    .err_o     (prec_err_o    ),
+    .cycles_o  (prec_cycles_o ),
+    .dma_req_o (prec_dma_req  ),
+    .dma_resp_i(prec_dma_resp )
+  );
+
+  // Ara's loads and stores already use AXI ID 0. The coprocessor does too,
+  // and this join keeps that ID width by giving the bus to one of them.
+  prec_axi_join #(
+    .req_t (ara_axi_req_t ),
+    .resp_t(ara_axi_resp_t)
+  ) i_prec_axi_join (
+    .clk_i      (clk_i        ),
+    .rst_ni     (rst_ni       ),
+    .ara_req_i  (ara_core_req ),
+    .ara_resp_o (ara_core_resp),
+    .prec_req_i (prec_dma_req ),
+    .prec_resp_o(prec_dma_resp),
+    .mst_req_o  (ara_axi_req  ),
+    .mst_resp_i (ara_axi_resp )
   );
 
   axi_mux #(

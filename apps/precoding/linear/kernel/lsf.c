@@ -144,7 +144,10 @@ static void lsf_from_beta(size_t K, size_t N, size_t M, double P, int use_vec, s
       }
     }
   }
-  apply_precoder(K * N, M, w_re, w_im, s_re, s_im, x_re, x_im);
+  if (use_vec)
+    apply_precoder_vec(K * N, M, w_re, w_im, s_re, s_im, x_re, x_im);
+  else
+    apply_precoder(K * N, M, w_re, w_im, s_re, s_im, x_re, x_im);
 }
 
 void lsf_beta_gold(size_t K, size_t N, size_t M, const double *h_re, const double *h_im,
@@ -223,7 +226,10 @@ static void lsf_run(size_t K, size_t N, size_t M, double P, int use_vec, size_t 
       }
     }
   }
-  apply_precoder(K * N, M, w_re, w_im, s_re, s_im, x_re, x_im);
+  if (use_vec)
+    apply_precoder_vec(K * N, M, w_re, w_im, s_re, s_im, x_re, x_im);
+  else
+    apply_precoder(K * N, M, w_re, w_im, s_re, s_im, x_re, x_im);
 }
 
 void lsf_gold(size_t K, size_t N, size_t M, double P, const double *h_re, const double *h_im,
