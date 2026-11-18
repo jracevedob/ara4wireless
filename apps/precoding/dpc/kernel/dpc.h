@@ -63,4 +63,15 @@ void dpc_ll_vec_tile(size_t K, size_t N, size_t M, double P, size_t tile, const 
                      const double *h_im, const double *s_re, const double *s_im,
                      double *rdiag, double *u_re, double *u_im, double *x_re, double *x_im);
 
+// Same coding as dpc_vec. Q and the working column stay in the vector registers
+// across the Gram-Schmidt updates. The low-latency form reduces each Gram entry
+// once and builds x in one pass over H.
+void dpc_opt(size_t K, size_t N, size_t M, double P, const double *h_re,
+             const double *h_im, const double *s_re, const double *s_im, double *q_re,
+             double *q_im, double *rdiag, double *u_re, double *u_im, double *x_re,
+             double *x_im);
+void dpc_ll_opt(size_t K, size_t N, size_t M, double P, const double *h_re,
+                const double *h_im, const double *s_re, const double *s_im,
+                double *rdiag, double *u_re, double *u_im, double *x_re, double *x_im);
+
 #endif

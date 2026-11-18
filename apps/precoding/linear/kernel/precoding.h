@@ -121,4 +121,28 @@ void lsf_ll_vec_tile(size_t K, size_t N, size_t M, double P, size_t tile, const 
                      const double *s_im, double *w_re, double *w_im, double *x_re,
                      double *x_im);
 
+// Same filters as the *_vec kernels. The Gram is the lower triangle, each dot
+// is reduced once, W stays in the vector registers for a whole antenna strip,
+// and the Frobenius norm and the power scale are vector reductions.
+void zf_opt(size_t K, size_t N, size_t M, double P, const double *h_re,
+            const double *h_im, const double *s_re, const double *s_im, double *w_re,
+            double *w_im, double *x_re, double *x_im);
+void zf_ll_opt(size_t K, size_t N, size_t M, double P, const double *h_re,
+               const double *h_im, const double *s_re, const double *s_im, double *w_re,
+               double *w_im, double *x_re, double *x_im);
+void mmse_opt(size_t K, size_t N, size_t M, double P, double sigma_n2, const double *h_re,
+              const double *h_im, const double *s_re, const double *s_im, double *w_re,
+              double *w_im, double *x_re, double *x_im);
+void mmse_ll_opt(size_t K, size_t N, size_t M, double P, double sigma_n2,
+                 const double *h_re, const double *h_im, const double *s_re,
+                 const double *s_im, double *w_re, double *w_im, double *x_re,
+                 double *x_im);
+void lsf_opt(size_t K, size_t N, size_t M, double P, const double *h_re,
+             const double *h_im, const double *s_re, const double *s_im, double *w_re,
+             double *w_im, double *x_re, double *x_im);
+void lsf_ll_opt(size_t K, size_t N, size_t M, double P, const double *h_re,
+                const double *h_im, const double *beta, const double *s_re,
+                const double *s_im, double *w_re, double *w_im, double *x_re,
+                double *x_im);
+
 #endif

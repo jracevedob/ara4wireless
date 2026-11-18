@@ -129,6 +129,15 @@ int main(void) {
       verify_cplx(x_re, x_im, gx_re, gx_im, M, "x"))
     return 1;
   start_timer();
+  dpc_opt(K, N, M, P, h_re, h_im, s_re, s_im, q_re, q_im, rdiag, u_re, u_im, x_re, x_im);
+  stop_timer();
+  printf("DPC optimization took %d cycles.\n", (int)get_timer());
+  if (verify_cplx(q_re, q_im, gq_re, gq_im, S * M, "Q_opt") ||
+      verify(rdiag, grdiag, S, "Rdiag_opt") ||
+      verify_cplx(u_re, u_im, gu_re, gu_im, S, "u_opt") ||
+      verify_cplx(x_re, x_im, gx_re, gx_im, M, "x_opt"))
+    return 1;
+  start_timer();
   dpc_ll_gold(K, N, M, P, h_re, h_im, s_re, s_im, rdiag, u_re, u_im, x_re, x_im);
   stop_timer();
   printf("DPC Ariane low-latency took %d cycles.\n", (int)get_timer());
@@ -143,6 +152,14 @@ int main(void) {
   if (verify(rdiag, grdiag, S, "Rdiag_ll_vec") ||
       verify_cplx(u_re, u_im, gu_re, gu_im, S, "u_ll_vec") ||
       verify_cplx(x_re, x_im, gx_re, gx_im, M, "x_ll_vec"))
+    return 1;
+  start_timer();
+  dpc_ll_opt(K, N, M, P, h_re, h_im, s_re, s_im, rdiag, u_re, u_im, x_re, x_im);
+  stop_timer();
+  printf("DPC optimization low-latency took %d cycles.\n", (int)get_timer());
+  if (verify(rdiag, grdiag, S, "Rdiag_ll_opt") ||
+      verify_cplx(u_re, u_im, gu_re, gu_im, S, "u_ll_opt") ||
+      verify_cplx(x_re, x_im, gx_re, gx_im, M, "x_ll_opt"))
     return 1;
   if (check_dpc(S, M, P, gq_re, gq_im, gx_re, gx_im)) {
     printf("DPC orthogonality or power check failed.\n");

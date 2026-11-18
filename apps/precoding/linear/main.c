@@ -189,6 +189,13 @@ int main(void) {
       verify_cplx(x_zf_re, x_zf_im, gx_zf_re, gx_zf_im, M, "x_zf"))
     return 1;
   start_timer();
+  zf_opt(K, N, M, P, h_re, h_im, s_re, s_im, w_zf_re, w_zf_im, x_zf_re, x_zf_im);
+  stop_timer();
+  printf("ZF optimization took %d cycles.\n", (int)get_timer());
+  if (verify_cplx(w_zf_re, w_zf_im, g_zf_re, g_zf_im, S * M, "W_zf_opt") ||
+      verify_cplx(x_zf_re, x_zf_im, gx_zf_re, gx_zf_im, M, "x_zf_opt"))
+    return 1;
+  start_timer();
   zf_ll_gold(K, N, M, P, h_re, h_im, s_re, s_im, w_zf_re, w_zf_im, x_zf_re, x_zf_im);
   stop_timer();
   printf("ZF Ariane low-latency took %d cycles.\n", (int)get_timer());
@@ -201,6 +208,13 @@ int main(void) {
   printf("ZF Ariane+Ara low-latency took %d cycles.\n", (int)get_timer());
   if (verify_cplx(w_zf_re, w_zf_im, g_zf_re, g_zf_im, S * M, "W_zf_ll_vec") ||
       verify_cplx(x_zf_re, x_zf_im, gx_zf_re, gx_zf_im, M, "x_zf_ll_vec"))
+    return 1;
+  start_timer();
+  zf_ll_opt(K, N, M, P, h_re, h_im, s_re, s_im, w_zf_re, w_zf_im, x_zf_re, x_zf_im);
+  stop_timer();
+  printf("ZF optimization low-latency took %d cycles.\n", (int)get_timer());
+  if (verify_cplx(w_zf_re, w_zf_im, g_zf_re, g_zf_im, S * M, "W_zf_ll_opt") ||
+      verify_cplx(x_zf_re, x_zf_im, gx_zf_re, gx_zf_im, M, "x_zf_ll_opt"))
     return 1;
   if (check_zf(S, M, P, h_re, h_im, g_zf_re, g_zf_im)) {
     printf("ZF nulling check failed.\n");
@@ -223,6 +237,14 @@ int main(void) {
       verify_cplx(x_mmse_re, x_mmse_im, gx_mmse_re, gx_mmse_im, M, "x_mmse"))
     return 1;
   start_timer();
+  mmse_opt(K, N, M, P, sigma_n2, h_re, h_im, s_re, s_im, w_mmse_re, w_mmse_im, x_mmse_re,
+           x_mmse_im);
+  stop_timer();
+  printf("MMSE optimization took %d cycles.\n", (int)get_timer());
+  if (verify_cplx(w_mmse_re, w_mmse_im, g_mmse_re, g_mmse_im, S * M, "W_mmse_opt") ||
+      verify_cplx(x_mmse_re, x_mmse_im, gx_mmse_re, gx_mmse_im, M, "x_mmse_opt"))
+    return 1;
+  start_timer();
   mmse_ll_gold(K, N, M, P, sigma_n2, h_re, h_im, s_re, s_im, w_mmse_re, w_mmse_im,
                x_mmse_re, x_mmse_im);
   stop_timer();
@@ -237,6 +259,14 @@ int main(void) {
   printf("MMSE Ariane+Ara low-latency took %d cycles.\n", (int)get_timer());
   if (verify_cplx(w_mmse_re, w_mmse_im, g_mmse_re, g_mmse_im, S * M, "W_mmse_ll_vec") ||
       verify_cplx(x_mmse_re, x_mmse_im, gx_mmse_re, gx_mmse_im, M, "x_mmse_ll_vec"))
+    return 1;
+  start_timer();
+  mmse_ll_opt(K, N, M, P, sigma_n2, h_re, h_im, s_re, s_im, w_mmse_re, w_mmse_im,
+              x_mmse_re, x_mmse_im);
+  stop_timer();
+  printf("MMSE optimization low-latency took %d cycles.\n", (int)get_timer());
+  if (verify_cplx(w_mmse_re, w_mmse_im, g_mmse_re, g_mmse_im, S * M, "W_mmse_ll_opt") ||
+      verify_cplx(x_mmse_re, x_mmse_im, gx_mmse_re, gx_mmse_im, M, "x_mmse_ll_opt"))
     return 1;
   if (check_power(S * M, P, g_mmse_re, g_mmse_im)) {
     printf("MMSE power check failed.\n");
@@ -256,6 +286,13 @@ int main(void) {
   if (verify_cplx(w_lsf_re, w_lsf_im, g_lsf_re, g_lsf_im, S * M, "W_lsf") ||
       verify_cplx(x_lsf_re, x_lsf_im, gx_lsf_re, gx_lsf_im, M, "x_lsf"))
     return 1;
+  start_timer();
+  lsf_opt(K, N, M, P, h_re, h_im, s_re, s_im, w_lsf_re, w_lsf_im, x_lsf_re, x_lsf_im);
+  stop_timer();
+  printf("LSF optimization took %d cycles.\n", (int)get_timer());
+  if (verify_cplx(w_lsf_re, w_lsf_im, g_lsf_re, g_lsf_im, S * M, "W_lsf_opt") ||
+      verify_cplx(x_lsf_re, x_lsf_im, gx_lsf_re, gx_lsf_im, M, "x_lsf_opt"))
+    return 1;
   double beta[K];
   lsf_beta_gold(K, N, M, h_re, h_im, beta);
   start_timer();
@@ -273,6 +310,14 @@ int main(void) {
   printf("LSF Ariane+Ara low-latency took %d cycles.\n", (int)get_timer());
   if (verify_cplx(w_lsf_re, w_lsf_im, g_lsf_re, g_lsf_im, S * M, "W_lsf_ll_vec") ||
       verify_cplx(x_lsf_re, x_lsf_im, gx_lsf_re, gx_lsf_im, M, "x_lsf_ll_vec"))
+    return 1;
+  start_timer();
+  lsf_ll_opt(K, N, M, P, h_re, h_im, beta, s_re, s_im, w_lsf_re, w_lsf_im, x_lsf_re,
+             x_lsf_im);
+  stop_timer();
+  printf("LSF optimization low-latency took %d cycles.\n", (int)get_timer());
+  if (verify_cplx(w_lsf_re, w_lsf_im, g_lsf_re, g_lsf_im, S * M, "W_lsf_ll_opt") ||
+      verify_cplx(x_lsf_re, x_lsf_im, gx_lsf_re, gx_lsf_im, M, "x_lsf_ll_opt"))
     return 1;
   if (check_power(S * M, P, g_lsf_re, g_lsf_im)) {
     printf("LSF power check failed.\n");
